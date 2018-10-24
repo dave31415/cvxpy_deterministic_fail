@@ -36,17 +36,6 @@ def hash_string(string, n_chars=16):
     return hash_val[0:n_chars]
 
 
-def first_derivative_matrix(n):
-    """
-    A sparse matrix representing the first derivative operator
-    :param n: a number
-    :return: a sparse matrix that applies the derivative operator
-             to a numpy array or list to yield a numpy array
-    """
-    e = np.mat(np.ones((1, n)))
-    return spdiags(np.vstack((-1*e, e)), range(2), n-1, n)
-
-
 def second_derivative_matrix_nes(x, a_min=0.0, a_max=None, scale_free=False):
     """
     Get the second derivative matrix for non-equally spaced points
@@ -99,14 +88,6 @@ def second_derivative_matrix_nes(x, a_min=0.0, a_max=None, scale_free=False):
     return dia_matrix(d2)
 
 
-def first_derv_nes_cvxpy(x, y):
-    n = len(x)
-    ep = 1e-9
-    idx = 1.0 / (x[1:] - x[0:-1] + ep)
-    matrix = first_derivative_matrix(n)
-    return cvxpy.multiply(idx, matrix * y)
-
-
 def get_solver(solver_name):
     solvers = {'CVXOPT': cvxpy.CVXOPT,
                'ECOS': cvxpy.ECOS,
@@ -142,16 +123,22 @@ class TSmodelSimple(object):
         # terms for objective function
 
         d2 = second_derivative_matrix_nes(self.time, scale_free=True)
-        first_derv = first_derv_nes_cvxpy(self.time, self.model_var)
 
         # Objective terms
 
         diff = self.values - self.model_var
 
-        hinge_norm_right = hinge_norm(diff)
-        hinge_norm_left = hinge_norm(-diff)
+        # Seems NOT to fail when use_hinge is False
+        # But should be equivalent
+        use_hinge = True
+        
+        if use_hinge:
+            hinge_norm_right = hinge_norm(diff)
+            hinge_norm_left = hinge_norm(-diff)
 
-        self.diff_obj = hinge_norm_left + hinge_norm_right
+            self.diff_obj = hinge_norm_left + hinge_norm_right
+        else:
+            self.diff_obj = cvxpy.norm(diff, 1)
 
         self.second_deriv_obj = self.params['alpha_derv_2'] \
             * cvxpy.norm(d2 * self.model_var, 1)
@@ -163,12 +150,8 @@ class TSmodelSimple(object):
 
         # Make constraints
 
-        # Off sets not allowed on the first few
-        constraints = [first_derv >= 0,
-                       first_derv <= 24.0]
-
         # Finally create, the Problem to be solved
-        self.problem = cvxpy.Problem(obj, constraints=constraints)
+        self.problem = cvxpy.Problem(obj)
 
     def _fit(self, solver_name):
         tols = self.solver_params['tolerances']
@@ -181,15 +164,13 @@ class TSmodelSimple(object):
                                      abstol_inacc=tols['abstol_inacc'],
                                      reltol_inacc=tols['reltol_inacc'],
                                      feastol_inacc=tols['feastol_inacc'])
-        # print('OBJ_MIN', obj_min)
+        print('OBJ_MIN', obj_min)
 
         self.objective_value = obj_min
 
     def fit(self):
         self._fit(self.solver_params['name'])
         if self.problem.status != 'optimal':
-            # Treat this a failure as well
-            # might also allow optimal_inaccurate
             raise SolverError
 
         # self.print_obj()
@@ -200,8 +181,6 @@ class TSmodelSimple(object):
     def print_obj(self):
         print('obj: ', self.objective.value)
         print('obj SS: ', self.diff_obj.value)
-        if self.n_points > 2:
-            print('obj SDER: ', self.second_deriv_obj.value)
 
 
 def test_deterministic_simple():
