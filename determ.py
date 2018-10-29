@@ -304,4 +304,4 @@ def test_deterministic_input_data_only():
 
 if __name__ == "__main__":
     test_deterministic_input_data_only()
-    #test_deterministic_simple()
+    test_deterministic_simple()
