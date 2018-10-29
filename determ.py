@@ -1,6 +1,6 @@
 from itertools import chain
 from hashlib import sha256
-
+from zlib import adler32 as hash_func
 import numpy as np
 from scipy.sparse import spdiags, coo_matrix, dia_matrix
 import cvxpy
@@ -34,6 +34,45 @@ def hash_string(string, n_chars=16):
     hash_object = hash_string_obj(string)
     hash_val = hash_object.hexdigest()
     return hash_val[0:n_chars]
+
+
+def describe_data(data):
+    print(data.__class__)
+    print(len(data))
+    print(data[0].keys())
+    for k, v in data[0].items():
+        print(k, v.__class__)
+
+
+def check_data(problem):
+    solver = params['solver']['name']
+    data = problem.get_problem_data(solver)
+    # describe_data(data)
+    # for ECOS ONLY
+    variables = data[0].keys()
+    hashes = []
+    for var in variables:
+        if var == 'dims':
+            continue
+
+        arr = data[0][var]
+        if arr is None:
+            continue
+
+        if not isinstance(arr, np.ndarray):
+            arr = arr.todense()
+
+        arr = arr.copy(order='C')
+        arr.flags.writeable = False
+        hash_val = hash_func(arr)
+        print('Hash for %s: %s' % (var, hash_val))
+        if var == 'c':
+            print(arr)
+
+        hashes.append(hash_val)
+
+    hash_all = hash_string(hashes.__repr__())
+    return hash_all
 
 
 def second_derivative_matrix_nes(x, a_min=0.0, a_max=None, scale_free=False):
@@ -111,8 +150,8 @@ class TSmodelSimple(object):
         self.n_points = len(time)
         self.hash_val = None
         self.solver = get_solver(self.solver_params['name'])
-
         self._create_model()
+        self.hash_all_data = check_data(self.problem)
 
     def _create_model(self):
         # Create the CVXPY model
@@ -131,7 +170,7 @@ class TSmodelSimple(object):
         # Seems NOT to fail when use_hinge is False
         # But should be equivalent
         use_hinge = True
-        
+
         if use_hinge:
             hinge_norm_right = hinge_norm(diff)
             hinge_norm_left = hinge_norm(-diff)
@@ -163,8 +202,10 @@ class TSmodelSimple(object):
                                      feastol=tols['feastol'],
                                      abstol_inacc=tols['abstol_inacc'],
                                      reltol_inacc=tols['reltol_inacc'],
-                                     feastol_inacc=tols['feastol_inacc'])
-        print('OBJ_MIN', obj_min)
+                                     feastol_inacc=tols['feastol_inacc'],
+                                     warm_start=False)
+
+        # print('OBJ_MIN', obj_min)
 
         self.objective_value = obj_min
 
@@ -189,7 +230,12 @@ def test_deterministic_simple():
 
     model = TSmodelSimple(time, values)
     model.fit()
-    print("HASH_VAL_ORIG: %s" % model.hash_val)
+    hash_val_orig = model.hash_val
+    hash_data_orig = model.hash_all_data
+
+    print("HASH_VAL_ORIG: %s" % hash_val_orig)
+    print("HASH_DATA_ORIG: %s" % hash_data_orig)
+    print('-------------------------')
     obj_orig = model.objective_value
 
     n = 20
@@ -198,11 +244,19 @@ def test_deterministic_simple():
         model = TSmodelSimple(time, values)
         model.fit()
         print("HASH_VAL_ITER_%s: %s" %(i, model.hash_val))
+        print("HASH_DATA_ITER_%s: %s" % (i, model.hash_all_data))
+
+        if model.hash_all_data != hash_data_orig:
+            print('Input data has changed')
+            # assert False
+
         obj = model.objective_value
 
         if obj != obj_orig:
             print('Fit model appears to be non-deterministic on iter %s' % (i+1))
             n_bad += 1
+
+        print('-------------------------')
 
     if n_bad > 0:
         print('Model NOT deterministic')
@@ -211,5 +265,43 @@ def test_deterministic_simple():
     print('OK')
 
 
+def test_deterministic_input_data_only():
+    # only problem setup. CVXPY still not deterministic even before
+    # calling ecos solver
+    time = np.array([0., 89., 90., 100.0])
+    values = np.array([0., 1000., 2000., 2700.0])
+
+    model = TSmodelSimple(time, values)
+    hash_data_orig = model.hash_all_data
+
+    print("HASH_DATA_ORIG: %s" % hash_data_orig)
+    print('-------------------------')
+
+    n = 20
+    n_bad = 0
+    hashes_unique = set()
+    for i in range(n):
+        model = TSmodelSimple(time, values)
+        print("HASH_DATA_ITER_%s: %s" % (i, model.hash_all_data))
+
+        hash_data = model.hash_all_data
+        hashes_unique.add(hash_data)
+        if hash_data != hash_data_orig:
+            print('Input data has changed')
+            n_bad += 1
+
+        print('-------------------------')
+
+    if n_bad > 0:
+        print('Model NOT deterministic')
+        print(n_bad, ' changes from original')
+        print('number variants: %s' % len(hashes_unique))
+        print('set of hashes', hashes_unique)
+        assert False
+
+    print('OK')
+
+
 if __name__ == "__main__":
-    test_deterministic_simple()
+    test_deterministic_input_data_only()
+    #test_deterministic_simple()
