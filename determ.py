@@ -205,7 +205,7 @@ class TSmodelSimple(object):
                                      feastol_inacc=tols['feastol_inacc'],
                                      warm_start=False)
 
-        # print('OBJ_MIN', obj_min)
+        print('OBJ_MIN', obj_min)
 
         self.objective_value = obj_min
 
@@ -229,6 +229,7 @@ def test_deterministic_simple():
     values = np.array([0., 1000., 2000., 2700.0])
 
     model = TSmodelSimple(time, values)
+    # assert False
     model.fit()
     hash_val_orig = model.hash_val
     hash_data_orig = model.hash_all_data
@@ -304,4 +305,4 @@ def test_deterministic_input_data_only():
 
 if __name__ == "__main__":
     test_deterministic_input_data_only()
-    test_deterministic_simple()
+    # test_deterministic_simple()
