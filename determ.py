@@ -140,9 +140,10 @@ def hinge_norm(diff):
 
 
 class TSmodelSimple(object):
-    def __init__(self, time, values):
+    def __init__(self, time, values, use_hinge=True):
         assert (time == time[np.argsort(time)]).all()
 
+        self.use_hinge = use_hinge
         self.solver_params = params['solver']
         self.params = params
         self.time = time
@@ -169,9 +170,8 @@ class TSmodelSimple(object):
 
         # Seems NOT to fail when use_hinge is False
         # But should be equivalent
-        use_hinge = True
 
-        if use_hinge:
+        if self.use_hinge:
             hinge_norm_right = hinge_norm(diff)
             hinge_norm_left = hinge_norm(-diff)
 
@@ -266,13 +266,13 @@ def test_deterministic_simple():
     print('OK')
 
 
-def test_deterministic_input_data_only():
+def check_deterministic_input_data_only(use_hinge=True):
     # only problem setup. CVXPY still not deterministic even before
     # calling ecos solver
     time = np.array([0., 89., 90., 100.0])
     values = np.array([0., 1000., 2000., 2700.0])
 
-    model = TSmodelSimple(time, values)
+    model = TSmodelSimple(time, values, use_hinge=use_hinge)
     hash_data_orig = model.hash_all_data
 
     print("HASH_DATA_ORIG: %s" % hash_data_orig)
@@ -282,7 +282,7 @@ def test_deterministic_input_data_only():
     n_bad = 0
     hashes_unique = set()
     for i in range(n):
-        model = TSmodelSimple(time, values)
+        model = TSmodelSimple(time, values, use_hinge=use_hinge)
         print("HASH_DATA_ITER_%s: %s" % (i, model.hash_all_data))
 
         hash_data = model.hash_all_data
@@ -303,6 +303,15 @@ def test_deterministic_input_data_only():
     print('OK')
 
 
+def test_deterministic_input_data_only():
+    check_deterministic_input_data_only(use_hinge=True)
+
+
+def test_deterministic_input_data_only_no_hinge():
+    check_deterministic_input_data_only(use_hinge=False)
+
+
 if __name__ == "__main__":
+    test_deterministic_input_data_only_no_hinge()
     test_deterministic_input_data_only()
-    # test_deterministic_simple()
+    test_deterministic_simple()

@@ -6,7 +6,12 @@ you can get non-deterministic outputs.
 
 Just run it with
 
+python -m pytest determ.py
+
+or 
+
 python determ.py
+
 
 Tested on Python3 and versions
 
